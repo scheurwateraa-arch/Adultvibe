@@ -6,4 +6,4 @@ export default function ScrollableContent({ children, className = "" }) {
       {children}
     </div>
   );
-}
+} 
