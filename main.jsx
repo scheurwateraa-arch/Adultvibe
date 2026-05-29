@@ -12,7 +12,7 @@ import {
   Settings,
   Zap
 } from "lucide-react";
-import { useBotService } from "./src/components/bot/useBotService.jsx";
+import { useBotService } from "./components/bot/useBotService.jsx";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import Splashscreen from "@/components/common/Splashscreen";
