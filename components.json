@@ -1,0 +1,510 @@
+import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { createPageUrl } from "@/utils";
+import { base44 } from "@/api/base44Client";
+import { motion, AnimatePresence, useMotionValue, useTransform } from "framer-motion";
+import { 
+  Heart, 
+  X, 
+  Star, 
+  MapPin, 
+  User,
+  Sparkles,
+  MessageCircle,
+  RefreshCw,
+  SlidersHorizontal
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { Slider } from "@/components/ui/slider";
+
+export default function Swipe() {
+  const navigate = useNavigate();
+  const [currentProfile, setCurrentProfile] = useState(null);
+  const [profiles, setProfiles] = useState([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [likedIds, setLikedIds] = useState(new Set());
+  const [skippedIds, setSkippedIds] = useState(new Set());
+  const [showMatch, setShowMatch] = useState(false);
+  const [matchedProfile, setMatchedProfile] = useState(null);
+  const [matches, setMatches] = useState([]);
+  const [showFilters, setShowFilters] = useState(false);
+  const [filters, setFilters] = useState({
+    gender: "all",
+    region: "all",
+    ageMin: 18,
+    ageMax: 99,
+    onlineOnly: false
+  });
+
+  useEffect(() => {
+    const profileId = localStorage.getItem('adultvibe_profile_id');
+    if (!profileId) {
+      navigate(createPageUrl("Home"));
+      return;
+    }
+    loadData(profileId);
+  }, []);
+
+  const loadData = async (profileId) => {
+    const myProfiles = await base44.entities.Profile.filter({ id: profileId });
+    if (myProfiles.length === 0) {
+      navigate(createPageUrl("Home"));
+      return;
+    }
+    setCurrentProfile(myProfiles[0]);
+
+    // Load existing likes
+    const likes = await base44.entities.Like.filter({ liker_id: profileId });
+    setLikedIds(new Set(likes.map(l => l.liked_id)));
+
+    // Load matches
+    const myMatches = await base44.entities.Like.filter({ 
+      liker_id: profileId, 
+      is_match: true 
+    });
+    setMatches(myMatches);
+
+    // Load all profiles
+    await loadProfiles(profileId, new Set(likes.map(l => l.liked_id)));
+  };
+
+  const loadProfiles = async (myId, alreadyLiked) => {
+    setLoading(true);
+    const allProfiles = await base44.entities.Profile.list('-last_active', 200);
+    
+    // Filter out self and already liked
+    let filtered = allProfiles.filter(p => 
+      p.id !== myId && 
+      !alreadyLiked.has(p.id) &&
+      !skippedIds.has(p.id)
+    );
+
+    // Apply filters
+    if (filters.gender !== "all") {
+      filtered = filtered.filter(p => p.gender === filters.gender);
+    }
+    if (filters.region !== "all") {
+      filtered = filtered.filter(p => p.region === filters.region);
+    }
+    if (filters.onlineOnly) {
+      filtered = filtered.filter(p => p.is_online);
+    }
+    filtered = filtered.filter(p => {
+      if (!p.age) return true;
+      return p.age >= filters.ageMin && p.age <= filters.ageMax;
+    });
+
+    // Shuffle for variety
+    const shuffled = filtered.sort(() => Math.random() - 0.5);
+    
+    setProfiles(shuffled);
+    setCurrentIndex(0);
+    setLoading(false);
+  };
+
+  const currentCard = profiles[currentIndex];
+
+  const handleLike = async () => {
+    if (!currentCard) return;
+
+    // Check for mutual like
+    const mutualLikes = await base44.entities.Like.filter({
+      liker_id: currentCard.id,
+      liked_id: currentProfile.id
+    });
+
+    const isMutual = mutualLikes.length > 0;
+
+    // Create like
+    await base44.entities.Like.create({
+      liker_id: currentProfile.id,
+      liked_id: currentCard.id,
+      is_match: isMutual
+    });
+
+    // Update mutual like if exists
+    if (isMutual) {
+      await base44.entities.Like.update(mutualLikes[0].id, { is_match: true });
+      setMatchedProfile(currentCard);
+      setShowMatch(true);
+      setMatches(prev => [...prev, { liked_id: currentCard.id }]);
+    }
+
+    setLikedIds(prev => new Set([...prev, currentCard.id]));
+    setCurrentIndex(prev => prev + 1);
+  };
+
+  const handleSkip = () => {
+    if (!currentCard) return;
+    setSkippedIds(prev => new Set([...prev, currentCard.id]));
+    setCurrentIndex(prev => prev + 1);
+  };
+
+  const handleRefresh = () => {
+    setSkippedIds(new Set());
+    loadProfiles(currentProfile.id, likedIds);
+  };
+
+  const applyFilters = () => {
+    setShowFilters(false);
+    setSkippedIds(new Set());
+    loadProfiles(currentProfile.id, likedIds);
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-pink-500 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
+  const noMoreCards = currentIndex >= profiles.length;
+
+  return (
+    <div className="min-h-screen px-4 py-6">
+      <div className="max-w-lg mx-auto">
+        {/* Header with match count */}
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-bold text-white">Swipe</h1>
+            <p className="text-gray-400 text-sm">
+              {noMoreCards ? 'Geen kaarten meer' : `${profiles.length - currentIndex} profielen over`}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setShowFilters(true)}
+              className="border-gray-700 text-gray-300 hover:bg-gray-800"
+            >
+              <SlidersHorizontal className="w-4 h-4" />
+            </Button>
+            {matches.length > 0 && (
+              <Badge className="bg-pink-500 text-white px-4 py-2">
+                <Heart className="w-4 h-4 mr-1 fill-current" />
+                {matches.length}
+              </Badge>
+            )}
+          </div>
+        </div>
+
+        {/* Swipe Card */}
+        <div className="relative aspect-[3/4] mb-6">
+          <AnimatePresence>
+            {noMoreCards ? (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="absolute inset-0 glass-card rounded-2xl flex flex-col items-center justify-center text-center p-8"
+              >
+                <Sparkles className="w-16 h-16 text-purple-500 mb-4" />
+                <h3 className="text-xl font-semibold text-white mb-2">
+                  Alle profielen bekeken!
+                </h3>
+                <p className="text-gray-400 mb-6">
+                  Kom later terug voor nieuwe mensen of ververs de lijst.
+                </p>
+                <Button
+                  onClick={handleRefresh}
+                  className="bg-gradient-to-r from-pink-600 to-purple-600"
+                >
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  Opnieuw laden
+                </Button>
+              </motion.div>
+            ) : currentCard && (
+              <SwipeCard
+                key={currentCard.id}
+                profile={currentCard}
+                onLike={handleLike}
+                onSkip={handleSkip}
+              />
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* Action Buttons */}
+        {!noMoreCards && currentCard && (
+          <div className="flex items-center justify-center gap-6">
+            <Button
+              onClick={handleSkip}
+              size="lg"
+              className="w-16 h-16 rounded-full bg-gray-800 hover:bg-gray-700 border-2 border-gray-700"
+            >
+              <X className="w-8 h-8 text-gray-400" />
+            </Button>
+            <Button
+              onClick={handleLike}
+              size="lg"
+              className="w-20 h-20 rounded-full bg-gradient-to-r from-pink-600 to-red-600 hover:from-pink-500 hover:to-red-500 shadow-lg shadow-pink-500/30"
+            >
+              <Heart className="w-10 h-10 text-white" />
+            </Button>
+          </div>
+        )}
+
+        {/* Filters Dialog */}
+        <Dialog open={showFilters} onOpenChange={setShowFilters}>
+          <DialogContent className="bg-gray-900 border border-gray-700 text-white max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-white">Swipe Filters</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div>
+                <Label className="text-gray-300 text-sm">Geslacht</Label>
+                <Select value={filters.gender} onValueChange={(v) => setFilters({...filters, gender: v})}>
+                  <SelectTrigger className="bg-gray-800 border-gray-700 text-white mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-gray-800 border-gray-700">
+                    <SelectItem value="all">Alle</SelectItem>
+                    <SelectItem value="man">Man</SelectItem>
+                    <SelectItem value="vrouw">Vrouw</SelectItem>
+                    <SelectItem value="stel">Stel</SelectItem>
+                    <SelectItem value="trans">Trans</SelectItem>
+                    <SelectItem value="anders">Anders</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label className="text-gray-300 text-sm">Regio</Label>
+                <Select value={filters.region} onValueChange={(v) => setFilters({...filters, region: v})}>
+                  <SelectTrigger className="bg-gray-800 border-gray-700 text-white mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-gray-800 border-gray-700">
+                    <SelectItem value="all">Alle</SelectItem>
+                    <SelectItem value="Noord-Holland">Noord-Holland</SelectItem>
+                    <SelectItem value="Zuid-Holland">Zuid-Holland</SelectItem>
+                    <SelectItem value="Utrecht">Utrecht</SelectItem>
+                    <SelectItem value="Noord-Brabant">Noord-Brabant</SelectItem>
+                    <SelectItem value="Gelderland">Gelderland</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label className="text-gray-300 text-sm mb-2 block">
+                  Leeftijd: {filters.ageMin} - {filters.ageMax}
+                </Label>
+                <div className="space-y-3">
+                  <Slider
+                    value={[filters.ageMin]}
+                    onValueChange={([v]) => setFilters({...filters, ageMin: v})}
+                    min={18}
+                    max={99}
+                    step={1}
+                    className="w-full"
+                  />
+                  <Slider
+                    value={[filters.ageMax]}
+                    onValueChange={([v]) => setFilters({...filters, ageMax: v})}
+                    min={18}
+                    max={99}
+                    step={1}
+                    className="w-full"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="online"
+                  checked={filters.onlineOnly}
+                  onChange={(e) => setFilters({...filters, onlineOnly: e.target.checked})}
+                  className="rounded border-gray-600"
+                />
+                <Label htmlFor="online" className="text-gray-300 text-sm cursor-pointer">
+                  Alleen online gebruikers
+                </Label>
+              </div>
+
+              <Button
+                onClick={applyFilters}
+                className="w-full bg-gradient-to-r from-pink-600 to-purple-600"
+              >
+                Toepassen
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Match Dialog */}
+        <Dialog open={showMatch} onOpenChange={setShowMatch}>
+          <DialogContent className="bg-gray-900 border-gray-700 text-white max-w-sm text-center">
+            <motion.div
+              initial={{ scale: 0.5, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              className="py-8"
+            >
+              <div className="flex justify-center mb-6">
+                <div className="relative">
+                  <div className="w-24 h-24 rounded-full border-4 border-pink-500 overflow-hidden">
+                    {matchedProfile?.avatar_url || matchedProfile?.photos?.[0] ? (
+                      <img
+                        src={matchedProfile.avatar_url || matchedProfile.photos[0]}
+                        alt={matchedProfile.display_name}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full bg-gray-800 flex items-center justify-center">
+                        <User className="w-12 h-12 text-gray-600" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="absolute -bottom-2 -right-2 w-10 h-10 bg-gradient-to-r from-pink-500 to-red-500 rounded-full flex items-center justify-center">
+                    <Heart className="w-6 h-6 text-white fill-current" />
+                  </div>
+                </div>
+              </div>
+
+              <h2 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-pink-500 to-purple-500 mb-2">
+                It's a Match! 🎉
+              </h2>
+              <p className="text-gray-400 mb-6">
+                Jij en {matchedProfile?.display_name} vinden elkaar leuk!
+              </p>
+
+              <div className="flex gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => setShowMatch(false)}
+                  className="flex-1 border-gray-700 text-gray-400"
+                >
+                  Doorgaan met swipen
+                </Button>
+                <Button
+                  onClick={() => {
+                    setShowMatch(false);
+                    navigate(createPageUrl("Chat") + `?userId=${matchedProfile.id}`);
+                  }}
+                  className="flex-1 bg-gradient-to-r from-pink-600 to-purple-600"
+                >
+                  <MessageCircle className="w-4 h-4 mr-2" />
+                  Chat
+                </Button>
+              </div>
+            </motion.div>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </div>
+  );
+}
+
+function SwipeCard({ profile, onLike, onSkip }) {
+  const x = useMotionValue(0);
+  const rotate = useTransform(x, [-200, 200], [-15, 15]);
+  const likeOpacity = useTransform(x, [0, 100], [0, 1]);
+  const nopeOpacity = useTransform(x, [-100, 0], [1, 0]);
+
+  const handleDragEnd = (_, info) => {
+    if (info.offset.x > 100) {
+      onLike();
+    } else if (info.offset.x < -100) {
+      onSkip();
+    }
+  };
+
+  const photos = profile.photos?.length > 0 ? profile.photos : [];
+  const displayPhoto = profile.avatar_url || photos[0];
+
+  return (
+    <motion.div
+      drag="x"
+      dragConstraints={{ left: 0, right: 0 }}
+      onDragEnd={handleDragEnd}
+      style={{ x, rotate }}
+      initial={{ scale: 0.95, opacity: 0 }}
+      animate={{ scale: 1, opacity: 1 }}
+      exit={{ x: 300, opacity: 0, transition: { duration: 0.2 } }}
+      className="absolute inset-0 cursor-grab active:cursor-grabbing"
+    >
+      <div className="relative w-full h-full rounded-2xl overflow-hidden">
+        {/* Photo */}
+        {displayPhoto ? (
+          <img
+            src={displayPhoto}
+            alt={profile.display_name}
+            className="w-full h-full object-cover"
+            draggable={false}
+          />
+        ) : (
+          <div className="w-full h-full bg-gradient-to-br from-gray-800 to-gray-900 flex items-center justify-center">
+            <User className="w-32 h-32 text-gray-700" />
+          </div>
+        )}
+
+        {/* Gradient overlay */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
+
+        {/* Like/Nope indicators */}
+        <motion.div
+          style={{ opacity: likeOpacity }}
+          className="absolute top-8 left-8 border-4 border-green-500 rounded-lg px-4 py-2 transform -rotate-12"
+        >
+          <span className="text-green-500 text-3xl font-bold">LIKE</span>
+        </motion.div>
+        <motion.div
+          style={{ opacity: nopeOpacity }}
+          className="absolute top-8 right-8 border-4 border-red-500 rounded-lg px-4 py-2 transform rotate-12"
+        >
+          <span className="text-red-500 text-3xl font-bold">NOPE</span>
+        </motion.div>
+
+        {/* Profile info */}
+        <div className="absolute bottom-0 left-0 right-0 p-6">
+          <h3 className="text-3xl font-bold text-white mb-1">
+            {profile.display_name}
+            {profile.age && <span className="font-normal">, {profile.age}</span>}
+          </h3>
+          <div className="flex items-center gap-3 text-gray-300 mb-3">
+            <span className="flex items-center gap-1">
+              <MapPin className="w-4 h-4" />
+              {profile.region}
+            </span>
+            <Badge variant="outline" className="border-purple-500/50 text-purple-400">
+              {profile.gender}
+            </Badge>
+            {profile.is_online && (
+              <span className="flex items-center gap-1 text-green-400">
+                <span className="w-2 h-2 bg-green-400 rounded-full"></span>
+                Online
+              </span>
+            )}
+          </div>
+
+          {profile.interests?.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {profile.interests.slice(0, 4).map(tag => (
+                <Badge key={tag} className="bg-pink-500/20 text-pink-300 text-xs">
+                  {tag}
+                </Badge>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </motion.div>
+  );
+}

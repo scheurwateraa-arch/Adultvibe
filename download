@@ -1,0 +1,406 @@
+import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { createPageUrl } from "@/utils";
+import { base44 } from "@/api/base44Client";
+import { motion } from "framer-motion";
+import { User, Sparkles, Check } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { 
+  Select, 
+  SelectContent, 
+  SelectItem, 
+  SelectTrigger, 
+  SelectValue 
+} from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
+
+const INTEREST_TAGS = [
+  "D/S", "NSA", "Dates", "Casual", "Sexting", "Roleplay", 
+  "FWB", "ONS", "Voyeur", "Exhib", "BDSM", "Fetish",
+  "Kink", "Vanilla", "Discreet", "Open", "Poly", "Couple"
+];
+
+const REGIONS = [
+  "Noord-Holland", "Zuid-Holland", "Utrecht", "Noord-Brabant", 
+  "Gelderland", "Limburg", "Overijssel", "Flevoland", 
+  "Groningen", "Friesland", "Drenthe", "Zeeland", "België"
+];
+
+const NL_CITIES = [
+  "Amsterdam", "Rotterdam", "Den Haag", "Utrecht", "Eindhoven",
+  "Groningen", "Tilburg", "Almere", "Breda", "Nijmegen",
+  "Hendrik-Ido-Ambacht", "Zwolle", "Leiden", "Apeldoorn",
+  "Anders"
+];
+
+export default function SetupProfile() {
+  const navigate = useNavigate();
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [acceptedRules, setAcceptedRules] = useState(false);
+  
+  const [form, setForm] = useState({
+    display_name: "",
+    age: "",
+    gender: "",
+    couple_person1_gender: "",
+    couple_person2_gender: "",
+    region: "",
+    city: "",
+    bio: "",
+    interests: [],
+    looking_for: [],
+    sexual_orientation: [],
+    height: "",
+    weight: "",
+    ethnicity: "",
+    short_description: ""
+  });
+
+  useEffect(() => {
+    checkUser();
+  }, []);
+
+  const checkUser = async () => {
+    try {
+      const currentUser = await base44.auth.me();
+      setUser(currentUser);
+      setForm(f => ({ ...f, display_name: currentUser.full_name || "" }));
+      
+      const profiles = await base44.entities.Profile.filter({ user_id: currentUser.email });
+      if (profiles.length > 0) {
+        localStorage.setItem('adultvibe_profile_id', profiles[0].id);
+        navigate(createPageUrl("Dashboard"));
+      }
+    } catch (e) {
+      navigate(createPageUrl("Home"));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleItem = (field, value) => {
+    setForm(f => ({
+      ...f,
+      [field]: f[field].includes(value) 
+        ? f[field].filter(v => v !== value)
+        : [...f[field], value]
+    }));
+  };
+
+  const handleSubmit = async () => {
+    if (!acceptedRules) return;
+    setSaving(true);
+
+    const profileData = {
+      user_id: user.email,
+      display_name: form.display_name,
+      age: parseInt(form.age),
+      gender: form.gender,
+      region: form.region,
+      city: form.city,
+      bio: form.bio,
+      interests: form.interests,
+      looking_for: form.looking_for,
+      sexual_orientation: form.sexual_orientation,
+      short_description: form.short_description,
+      is_guest: false,
+      is_online: true,
+      last_active: new Date().toISOString(),
+      photos: [],
+      avatar_url: ""
+    };
+
+    if (form.gender === "stel") {
+      profileData.couple_person1_gender = form.couple_person1_gender;
+      profileData.couple_person2_gender = form.couple_person2_gender;
+    }
+
+    if (form.height) profileData.height = parseInt(form.height);
+    if (form.weight) profileData.weight = parseInt(form.weight);
+    if (form.ethnicity) profileData.ethnicity = form.ethnicity;
+
+    const profile = await base44.entities.Profile.create(profileData);
+
+    localStorage.setItem('adultvibe_profile_id', profile.id);
+    navigate(createPageUrl("Dashboard"));
+  };
+
+  if (loading) {
+    return (
+      <div className="h-screen flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-pink-500 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full overflow-y-auto py-8 px-4">
+      <motion.div 
+        className="max-w-lg mx-auto pb-20"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+      >
+        <div className="text-center mb-6">
+          <div className="w-14 h-14 bg-gradient-to-br from-pink-500 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-3">
+            <User className="w-7 h-7 text-white" />
+          </div>
+          <h1 className="text-2xl font-bold text-white mb-1">Maak je Profiel</h1>
+          <p className="text-gray-400 text-sm">Welkom, {user?.full_name}!</p>
+        </div>
+
+        <div className="glass-card rounded-2xl p-5 space-y-4">
+          <div>
+            <Label className="text-gray-300 text-sm">Display Naam *</Label>
+            <Input
+              value={form.display_name}
+              onChange={(e) => setForm({ ...form, display_name: e.target.value })}
+              placeholder="Je chatnaam..."
+              className="bg-gray-800/50 border-gray-700 text-white mt-1"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-gray-300 text-sm">Leeftijd *</Label>
+              <Input
+                type="number"
+                min="18"
+                max="99"
+                value={form.age}
+                onChange={(e) => setForm({ ...form, age: e.target.value })}
+                placeholder="18+"
+                className="bg-gray-800/50 border-gray-700 text-white mt-1"
+              />
+            </div>
+            <div>
+              <Label className="text-gray-300 text-sm">Geslacht *</Label>
+              <Select value={form.gender} onValueChange={(v) => setForm({ ...form, gender: v })}>
+                <SelectTrigger className="bg-gray-800/50 border-gray-700 text-white mt-1">
+                  <SelectValue placeholder="Kies..." />
+                </SelectTrigger>
+                <SelectContent className="bg-gray-800 border-gray-700">
+                  <SelectItem value="man">Man</SelectItem>
+                  <SelectItem value="vrouw">Vrouw</SelectItem>
+                  <SelectItem value="stel">Stel</SelectItem>
+                  <SelectItem value="trans">Trans</SelectItem>
+                  <SelectItem value="anders">Anders</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {form.gender === "stel" && (
+            <div className="grid grid-cols-2 gap-3 p-3 bg-purple-500/10 rounded-lg">
+              <div>
+                <Label className="text-gray-300 text-xs">Persoon 1</Label>
+                <Select value={form.couple_person1_gender} onValueChange={(v) => setForm({ ...form, couple_person1_gender: v })}>
+                  <SelectTrigger className="bg-gray-800/50 border-gray-700 text-white mt-1 h-9">
+                    <SelectValue placeholder="Geslacht" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-gray-800 border-gray-700">
+                    <SelectItem value="man">Man</SelectItem>
+                    <SelectItem value="vrouw">Vrouw</SelectItem>
+                    <SelectItem value="trans">Trans</SelectItem>
+                    <SelectItem value="anders">Anders</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-gray-300 text-xs">Persoon 2</Label>
+                <Select value={form.couple_person2_gender} onValueChange={(v) => setForm({ ...form, couple_person2_gender: v })}>
+                  <SelectTrigger className="bg-gray-800/50 border-gray-700 text-white mt-1 h-9">
+                    <SelectValue placeholder="Geslacht" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-gray-800 border-gray-700">
+                    <SelectItem value="man">Man</SelectItem>
+                    <SelectItem value="vrouw">Vrouw</SelectItem>
+                    <SelectItem value="trans">Trans</SelectItem>
+                    <SelectItem value="anders">Anders</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-gray-300 text-sm">Provincie *</Label>
+              <Select value={form.region} onValueChange={(v) => setForm({ ...form, region: v })}>
+                <SelectTrigger className="bg-gray-800/50 border-gray-700 text-white mt-1">
+                  <SelectValue placeholder="Kies..." />
+                </SelectTrigger>
+                <SelectContent className="bg-gray-800 border-gray-700">
+                  {REGIONS.map(r => (
+                    <SelectItem key={r} value={r}>{r}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-gray-300 text-sm">Stad</Label>
+              <Select value={form.city} onValueChange={(v) => setForm({ ...form, city: v })}>
+                <SelectTrigger className="bg-gray-800/50 border-gray-700 text-white mt-1">
+                  <SelectValue placeholder="Optioneel" />
+                </SelectTrigger>
+                <SelectContent className="bg-gray-800 border-gray-700">
+                  {NL_CITIES.map(c => (
+                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div>
+            <Label className="text-gray-300 text-sm">Wat zoek je?</Label>
+            <div className="flex flex-wrap gap-2 mt-2">
+              {["man", "vrouw", "trans", "anders"].map(o => (
+                <Badge
+                  key={o}
+                  onClick={() => toggleItem("looking_for", o)}
+                  className={`cursor-pointer capitalize ${
+                    form.looking_for.includes(o)
+                      ? "bg-pink-500 text-white"
+                      : "border-gray-600 text-gray-400 hover:border-pink-500"
+                  }`}
+                  variant={form.looking_for.includes(o) ? "default" : "outline"}
+                >
+                  {form.looking_for.includes(o) && <Check className="w-3 h-3 mr-1" />}
+                  {o}
+                </Badge>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <Label className="text-gray-300 text-sm">Seksuele orientatie</Label>
+            <div className="flex flex-wrap gap-2 mt-2">
+              {["hetero", "bi", "gay", "anders"].map(o => (
+                <Badge
+                  key={o}
+                  onClick={() => toggleItem("sexual_orientation", o)}
+                  className={`cursor-pointer capitalize ${
+                    form.sexual_orientation.includes(o)
+                      ? "bg-purple-500 text-white"
+                      : "border-gray-600 text-gray-400 hover:border-purple-500"
+                  }`}
+                  variant={form.sexual_orientation.includes(o) ? "default" : "outline"}
+                >
+                  {form.sexual_orientation.includes(o) && <Check className="w-3 h-3 mr-1" />}
+                  {o}
+                </Badge>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <Label className="text-gray-300 text-sm">Lengte (cm)</Label>
+              <Input
+                type="number"
+                value={form.height}
+                onChange={(e) => setForm({ ...form, height: e.target.value })}
+                placeholder="170"
+                className="bg-gray-800/50 border-gray-700 text-white mt-1"
+              />
+            </div>
+            <div>
+              <Label className="text-gray-300 text-sm">Gewicht (kg)</Label>
+              <Input
+                type="number"
+                value={form.weight}
+                onChange={(e) => setForm({ ...form, weight: e.target.value })}
+                placeholder="70"
+                className="bg-gray-800/50 border-gray-700 text-white mt-1"
+              />
+            </div>
+            <div>
+              <Label className="text-gray-300 text-sm">Afkomst</Label>
+              <Input
+                value={form.ethnicity}
+                onChange={(e) => setForm({ ...form, ethnicity: e.target.value })}
+                placeholder="Optioneel"
+                className="bg-gray-800/50 border-gray-700 text-white mt-1"
+              />
+            </div>
+          </div>
+
+          <div>
+            <Label className="text-gray-300 text-sm">Korte omschrijving</Label>
+            <Input
+              value={form.short_description}
+              onChange={(e) => setForm({ ...form, short_description: e.target.value })}
+              placeholder="Kort en pakkend..."
+              className="bg-gray-800/50 border-gray-700 text-white mt-1"
+            />
+          </div>
+
+          <div>
+            <Label className="text-gray-300 text-sm">Bio</Label>
+            <Textarea
+              value={form.bio}
+              onChange={(e) => setForm({ ...form, bio: e.target.value })}
+              placeholder="Vertel over jezelf..."
+              className="bg-gray-800/50 border-gray-700 text-white mt-1 min-h-[80px]"
+            />
+          </div>
+
+          <div>
+            <Label className="text-gray-300 text-sm mb-2 block">Interesses</Label>
+            <div className="flex flex-wrap gap-2">
+              {INTEREST_TAGS.map(tag => (
+                <Badge
+                  key={tag}
+                  onClick={() => toggleItem("interests", tag)}
+                  className={`cursor-pointer ${
+                    form.interests.includes(tag)
+                      ? "bg-pink-500 text-white"
+                      : "border-gray-600 text-gray-400 hover:border-pink-500"
+                  }`}
+                  variant={form.interests.includes(tag) ? "default" : "outline"}
+                >
+                  {form.interests.includes(tag) && <Check className="w-3 h-3 mr-1" />}
+                  {tag}
+                </Badge>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex items-start gap-3 p-3 bg-gray-800/30 rounded-lg">
+            <Checkbox
+              id="rules"
+              checked={acceptedRules}
+              onCheckedChange={setAcceptedRules}
+              className="mt-1 border-purple-500 data-[state=checked]:bg-pink-500"
+            />
+            <label htmlFor="rules" className="text-xs text-gray-400 cursor-pointer">
+              Ik ben 18+ en accepteer de gebruiksvoorwaarden. Ik begrijp dat dit platform 
+              expliciet adult content bevat.
+            </label>
+          </div>
+
+          <Button
+            onClick={handleSubmit}
+            disabled={saving || !acceptedRules || !form.display_name || !form.age || !form.gender || !form.region}
+            className="w-full bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 py-6 text-lg font-bold"
+          >
+            {saving ? (
+              <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <>
+                <Sparkles className="w-5 h-5 mr-2" />
+                Profiel Aanmaken
+              </>
+            )}
+          </Button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
